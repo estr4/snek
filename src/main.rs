@@ -3,6 +3,8 @@
 const SCREEN_WIDTH: i32 = 1200;
 const SCREEN_HEIGHT: i32 = 720;
 
+use std::time::{Duration, Instant};
+
 use rand::random;
 use raylib::prelude::*;
 
@@ -95,7 +97,7 @@ impl Snake {
             direction += a.rhs * 0.33;
         }
 
-        self.body[0].point += direction.normalized() * 5.0;
+        self.body[0].point += direction.normalized() * 7.5;
     }
 
     /// Update the Snakes body based on the anchor positions
@@ -174,6 +176,7 @@ struct Game {
     apple: Apple,
     snake: Snake,
     body: Vec::<Anchor>,
+    start: Instant
 }
 
 impl Game {
@@ -181,14 +184,14 @@ impl Game {
         let mut body = Vec::<Anchor>::with_capacity(20);
         
         let sizes: [f32; 13] = [
-            30.0, 40.0, 42.0, 30.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 10.0,
+            33.0, 40.0, 42.0, 33.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0
         ];
 
         for i in 0..12 {
             let sum: f32 = sizes[0..i].iter().sum();
             let anchor = Anchor::new(
                 Vector2 {
-                    x: 200.0 - sum,
+                    x: 50.0 - sum,
                     y: 120.0,
                 },
                 sizes[i],
@@ -210,16 +213,16 @@ impl Game {
             apple,
             snake,
             body,
+            start: Instant::now(),
         }
     }
 
     /// Try to Eat the Apple
     fn try_apple(&mut self) {
         let head = self.snake.body[0];
-        if head.distance + self.apple.radius > (head.point - self.apple.point).length() {
-            self.snake.body.insert(
-                self.snake.body.len() - 1,
-                Anchor::new(self.snake.body[self.snake.body.len() - 1].point, 25.0),
+        if head.distance + self.apple.radius > (head.point - self.apple.point).length() - 5.0 {
+            self.snake.body.push(
+                Anchor::new(self.snake.body[self.snake.body.len() - 1].point, 30.0),
             );
 
             self.apple.point = Vector2::new(
@@ -236,7 +239,7 @@ impl Game {
         let head = self.snake.body[0];
         for tail in self.snake.body[3..].iter() {
             if head.distance + tail.distance > (head.point - tail.point).length() {
-                self.screen = Screen::GameOver
+                self.screen = Screen::GameOver;
             }
         }
     }
@@ -247,31 +250,47 @@ impl Game {
         self.snake.body[0].point.y = self.snake.body[0].point.y.clamp(0.0 + d, SCREEN_HEIGHT as f32 - d);
     }
 
+    fn timer(&mut self) {
+        let duration = Duration::from_secs(40);
+        if Instant::now() - self.start >= duration {
+            self.screen = Screen::GameOver;
+        }
+    }
+
     fn logo(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread) {
         if rl.is_key_pressed(KeyboardKey::KEY_ENTER) {
+            self.start = Instant::now();
             self.screen = Screen::Play;
         }
         
         let mut d = rl.begin_drawing(&thread);
-        d.draw_text("WELCOME", SCREEN_WIDTH/2 - 105, 30, 30, Color::WHITE);
-        d.draw_text("PRESS ENTER TO START", SCREEN_WIDTH/2 - 105, 300, 20, Color::WHITE);
-        d.clear_background(Color::SLATEGRAY);
+        d.draw_text("WELCOME", 10, 10, 60, Color::WHITE);
+        d.draw_text("YOU HAVE 40 SECONDS TO EAT AS MANY ORANGES AS YOU CAN.", 10, 140, 30, Color::WHITE);
+        d.draw_text("PRESS ENTER TO START", 10, 200, 30, Color::GRAY);
+        d.clear_background(Color::new(50, 50, 50, 255));
     }
 
     fn game_over(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread) {
         if rl.is_key_pressed(KeyboardKey::KEY_ENTER) {
+            self.score = 0;
             self.screen = Screen::Play;
             self.snake = Snake::from_body(self.body.clone());
+            self.start = Instant::now();
+            self.apple.point = Vector2::new(
+                random::<f32>() * SCREEN_WIDTH as f32,
+                random::<f32>() * SCREEN_HEIGHT as f32,
+            );
         }
         
         let mut d = rl.begin_drawing(&thread);
-        d.draw_text("GAME OVER", SCREEN_WIDTH/2 - 105, 30, 30, Color::RED);
-        d.draw_text(&format!("FINAL SCORE: {}", self.score), SCREEN_WIDTH/2 - 105, 100, 20, Color::WHITE);
-        d.draw_text("PRESS ENTER TO RESTART", SCREEN_WIDTH/2 - 105, 300, 20, Color::WHITE);
-        d.clear_background(Color::SLATEGRAY);
+        d.draw_text("GAME OVER", 10, 10, 60, Color::RED);
+        d.draw_text(&format!("FINAL SCORE: {}", self.score), 10, 140, 30, Color::WHITE);
+        d.draw_text("PRESS ENTER TO RESTART", 10, 200, 30, Color::GRAY);
+        d.clear_background(Color::new(50, 50, 50, 255));
     }
 
     fn play(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread) {
+        
         if rl.is_key_pressed(KeyboardKey::KEY_COMMA) {
             self.debug = !self.debug;
         }
@@ -283,15 +302,18 @@ impl Game {
         let mut d = rl.begin_drawing(&thread);
         self.clamp();
         self.oroboros();
-
+        self.timer();
+        
         self.apple.draw(&mut d);
         self.snake.draw(&mut d);
-        
+
+
         if self.debug {
             self.snake.visualise(&mut d);            
         }
-
+        
         d.draw_text(&format!("Score: {}", self.score), 10, 10, 20, Color::WHITE);
+        d.draw_text(&format!("Time: {:.1}s/40s", (Instant::now() - self.start).as_secs_f32()), SCREEN_WIDTH - 160, 10, 20, Color::WHITE);
         d.clear_background(Color::DARKSLATEGRAY);
     }
 
@@ -302,7 +324,7 @@ impl Game {
             .build();
 
         rl.set_target_fps(60);
-
+        
         while !rl.window_should_close() {
             match self.screen {
                 Screen::Logo => self.logo(&mut rl, &thread),
